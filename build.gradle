@@ -1,0 +1,11 @@
+apply plugin: 'android-library'
+
+android {
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src/java']
+            aidl.srcDirs = ['src/java/com']
+        }
+    }
+}
