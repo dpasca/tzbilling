@@ -126,10 +126,13 @@ public class googlepayment extends payment.BillingAgent
         };
 
         _log("binding service ...");
-        boolean bound = activity.bindService
-            (new Intent
-             ("com.android.vending.billing.InAppBillingService.BIND"),
-             mServiceConnection, Context.BIND_AUTO_CREATE);
+        Intent i = new Intent("com.android.vending.billing.InAppBillingService.BIND");
+        i.setPackage("com.android.vending");
+
+        boolean bound = activity.bindService(
+            i,
+            mServiceConnection,
+            Context.BIND_AUTO_CREATE);
         _log("back from bindService: bound: " + Boolean.toString(bound));
     }
 
