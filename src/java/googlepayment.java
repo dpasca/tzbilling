@@ -478,7 +478,7 @@ public class googlepayment extends payment.BillingAgent
 
     void threadQueryProduct(final String sku, final long context)
     {
-        ArrayList skuList = new ArrayList();
+        ArrayList<String> skuList = new ArrayList<String>();
         skuList.add(sku);
         Bundle productQueryBundle = new Bundle();
         productQueryBundle.putStringArrayList("ITEM_ID_LIST", skuList);
