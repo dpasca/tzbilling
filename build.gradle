@@ -1,11 +1,21 @@
-apply plugin: 'android-library'
+apply plugin: 'com.android.library'
 
 android {
+    namespace 'com.turbulenz.turbulenz.tzbilling'
+
+    compileSdkVersion 34
+
+    defaultConfig {
+        minSdkVersion 16
+        targetSdkVersion 34
+    }
+
     sourceSets {
         main {
             manifest.srcFile 'AndroidManifest.xml'
             java.srcDirs = ['src/java']
-            aidl.srcDirs = ['src/java/com']
+            // Now using .java, see README.md
+            //aidl.srcDirs = ['src/java']
         }
     }
 }

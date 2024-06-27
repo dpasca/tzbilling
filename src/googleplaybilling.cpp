@@ -224,10 +224,9 @@ Java_com_turbulenz_turbulenz_payment_nativeOnReadyStatus
 namespace turbulenz
 {
 
-GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass) :
-    mJNIEnv(jniEnv),
-    mPaymentClass(paymentClass),
-    mReadyStatusCallback(0)
+GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass)
+    : mJNIEnv(jniEnv)
+    , mPaymentClass(paymentClass)
 {
     LOGI("initializing");
 

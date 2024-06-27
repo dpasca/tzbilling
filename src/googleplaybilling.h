@@ -68,8 +68,8 @@ public:
 
     bool ConsumePurchase(const char *googleToken);
 
-    void          *mReadyStatusContext;
-    ReadyStatusCB  mReadyStatusCallback;
+    void          *mReadyStatusContext {};
+    ReadyStatusCB  mReadyStatusCallback {};
 
 protected:
 
