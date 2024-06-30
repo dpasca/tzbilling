@@ -14,8 +14,10 @@ android {
         main {
             manifest.srcFile 'AndroidManifest.xml'
             java.srcDirs = ['src/java']
-            // Now using .java, see README.md
-            //aidl.srcDirs = ['src/java']
         }
     }
+}
+
+dependencies {
+    implementation 'com.android.billingclient:billing:7.0.0'
 }

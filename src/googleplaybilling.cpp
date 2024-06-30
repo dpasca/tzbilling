@@ -416,11 +416,14 @@ GooglePlayBilling::ConfirmPurchase(void *ctx, const char *sku,
     jstring jClientToken = mJNIEnv->NewStringUTF(clientToken);
     jlong jCtx = (jlong )(size_t )purchaseCtx;
 
+    LOGI("Calling Java DoPurchase method ...");
     if (!CallJavaMethod(mDoPurchaseMethod, jSKU, jClientToken, jCtx))
     {
+        LOGI("DoPurchase method returned FALSE");
         delete purchaseCtx;
         return false;
     }
+    LOGI("DoPurchase method returned TRUE");
 
     return true;
 }
