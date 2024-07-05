@@ -64,6 +64,7 @@ public:
     bool QueryProduct(void *ctx, const char *sku, ProductQueryCB callback);
 
     bool ConfirmPurchase(void *ctx, const char *sku, const char *clientToken,
+                         bool isConsumable,
                          PurchaseSuccessCB success, PurchaseFailureCB failure);
 
     bool ConsumePurchase(const char *googleToken);

@@ -260,7 +260,7 @@ GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass)
                 (mPaymentClass, "doCheckReady", "(J)Z");
             mDoPurchaseMethod = jniEnv->GetStaticMethodID
                 (mPaymentClass, "doPurchase",
-                 "(Ljava/lang/String;Ljava/lang/String;J)Z");
+                 "(Ljava/lang/String;Ljava/lang/String;ZJ)Z");
             mDoQueryPurchasesMethod = jniEnv->GetStaticMethodID
                 (mPaymentClass, "doQueryPurchases", "(J)Z");
             mDoQueryProductMethod = jniEnv->GetStaticMethodID
@@ -398,6 +398,7 @@ GooglePlayBilling::QueryProduct(void *ctx, const char *sku,
 bool
 GooglePlayBilling::ConfirmPurchase(void *ctx, const char *sku,
                                    const char *clientToken,
+                                   bool isConsumable,
                                    GooglePlayBilling::PurchaseSuccessCB success,
                                    GooglePlayBilling::PurchaseFailureCB failure)
 {
@@ -414,10 +415,11 @@ GooglePlayBilling::ConfirmPurchase(void *ctx, const char *sku,
 
     jstring jSKU = mJNIEnv->NewStringUTF(sku);
     jstring jClientToken = mJNIEnv->NewStringUTF(clientToken);
+    jboolean jIsConsumable = isConsumable;
     jlong jCtx = (jlong )(size_t )purchaseCtx;
 
     LOGI("Calling Java DoPurchase method ...");
-    if (!CallJavaMethod(mDoPurchaseMethod, jSKU, jClientToken, jCtx))
+    if (!CallJavaMethod(mDoPurchaseMethod, jSKU, jClientToken, jIsConsumable, jCtx))
     {
         LOGI("DoPurchase method returned FALSE");
         delete purchaseCtx;

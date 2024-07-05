@@ -49,6 +49,7 @@ public class payment
         /// sendPurchaseFailure or sendPurchaseResult exactly once.
         abstract public boolean doPurchase(final String sku,
                                            final String devPayload,
+                                           final boolean isConsumable,
                                            final long context);
 
         /// If this returns true, it must call sendPurchaseInfo() for
@@ -335,6 +336,7 @@ public class payment
 
     //
     public static boolean doPurchase(final String sku, final String devPayload,
+                                     final boolean isConsumable,
                                      long context)
     {
         _print("doPurchase: " + sku);
@@ -347,7 +349,7 @@ public class payment
         // Should this class handle moving everything to a thread?
 
         if (null != sBillingAgent) {
-            return sBillingAgent.doPurchase(sku, devPayload, context);
+            return sBillingAgent.doPurchase(sku, devPayload, isConsumable, context);
         }
 
         _error("doPurchase: no billing agent");

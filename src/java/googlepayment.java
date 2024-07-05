@@ -35,6 +35,7 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
     private BillingClient mBillingClient;
     private int mPurchaseRequestCode;
     private long mPurchaseContext = 0;
+    private boolean mPendingConsumableFlag;
 
     public googlepayment(Activity activity, int purchaseRequestCode)
     {
@@ -106,19 +107,24 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
         }
 
         if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
-            // Acknowledge the purchase if it hasn't been acknowledged yet.
-            if (!purchase.isAcknowledged()) {
-                AcknowledgePurchaseParams acknowledgePurchaseParams =
-                        AcknowledgePurchaseParams.newBuilder()
-                                .setPurchaseToken(purchase.getPurchaseToken())
-                                .build();
-                mBillingClient.acknowledgePurchase(acknowledgePurchaseParams, billingResult -> {
-                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                        _log("Purchase acknowledged");
-                    } else {
-                        _error("Failed to acknowledge purchase: " + billingResult.getResponseCode());
-                    }
-                });
+            if (mPendingConsumableFlag) {
+                // For consumable items, consume immediately
+                doConsume(purchase.getPurchaseToken());
+            } else {
+                // Acknowledge the purchase if it hasn't been acknowledged yet.
+                if (!purchase.isAcknowledged()) {
+                    AcknowledgePurchaseParams acknowledgePurchaseParams =
+                            AcknowledgePurchaseParams.newBuilder()
+                                    .setPurchaseToken(purchase.getPurchaseToken())
+                                    .build();
+                    mBillingClient.acknowledgePurchase(acknowledgePurchaseParams, billingResult -> {
+                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                            _log("Purchase acknowledged");
+                        } else {
+                            _error("Failed to acknowledge purchase: " + billingResult.getResponseCode());
+                        }
+                    });
+                }
             }
         }
 
@@ -136,7 +142,7 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
     }
 
     @Override
-    public boolean doPurchase(final String sku, final String devPayload, final long context)
+    public boolean doPurchase(final String sku, final String devPayload, final boolean isConsumable, final long context)
     {
         _print("doPurchase: " + sku);
         if (!mIsReady) {
@@ -180,6 +186,11 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                         _error("Failed to launch billing flow: " + result.getResponseCode());
                         sendPurchaseFailure(mPurchaseContext, "failed to launch billing flow");
                         mPurchaseContext = 0;
+                    }
+                    else {
+                        _log("Purchase started");
+                        // Store the consumable so that we know if we have to acknowledge it later
+                        mPendingConsumableFlag = isConsumable;
                     }
                 });
         return true;
