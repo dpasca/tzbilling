@@ -43,15 +43,6 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
         return products.get(0);
     }
 
-    private static String getObfuscatedAccountId(Purchase purchase)
-    {
-        Purchase.AccountIdentifiers ids = purchase.getAccountIdentifiers();
-        if (ids == null) {
-            return null;
-        }
-        return ids.getObfuscatedAccountId();
-    }
-
     public googlepayment(Activity activity, int purchaseRequestCode)
     {
         mActivity = activity;
@@ -144,11 +135,10 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
         }
 
         String sku = getFirstProductId(purchase);
-        String devPayload = getObfuscatedAccountId(purchase);
 
         _log("Purchase succeeded");
         sendPurchaseResult(mPurchaseContext, sku, purchase.getOriginalJson(),
-                purchase.getPurchaseToken(), devPayload, purchase.getSignature());
+                purchase.getPurchaseToken(), null, purchase.getSignature());
     }
 
     @Override
@@ -257,12 +247,11 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                             return;
                         }
 
-                        String devPayload = getObfuscatedAccountId(purchase);
                         _print(" - " + sku);
                         _log("   - (data:" + purchase.getOriginalJson() + ", sig: " + purchase.getSignature() + ")");
 
                         sendPurchaseInfo(context, sku, purchase.getOriginalJson(), purchase.getPurchaseToken(),
-                                devPayload, purchase.getSignature());
+                                null, purchase.getSignature());
                     }
                     sendPurchaseInfoTerminator(context);
                 });
