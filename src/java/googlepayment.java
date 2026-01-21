@@ -9,9 +9,6 @@ import android.util.Log;
 
 import com.android.billingclient.api.*;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,6 +33,24 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
     private int mPurchaseRequestCode;
     private long mPurchaseContext = 0;
     private boolean mPendingConsumableFlag;
+
+    private static String getFirstProductId(Purchase purchase)
+    {
+        List<String> products = purchase.getProducts();
+        if (products == null || products.isEmpty()) {
+            return "";
+        }
+        return products.get(0);
+    }
+
+    private static String getObfuscatedAccountId(Purchase purchase)
+    {
+        Purchase.AccountIdentifiers ids = purchase.getAccountIdentifiers();
+        if (ids == null) {
+            return null;
+        }
+        return ids.getObfuscatedAccountId();
+    }
 
     public googlepayment(Activity activity, int purchaseRequestCode)
     {
@@ -128,9 +143,12 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
             }
         }
 
+        String sku = getFirstProductId(purchase);
+        String devPayload = getObfuscatedAccountId(purchase);
+
         _log("Purchase succeeded");
-        sendPurchaseResult(mPurchaseContext, purchase.getSkus().get(0), purchase.getOriginalJson(),
-                purchase.getPurchaseToken(), purchase.getDeveloperPayload(), purchase.getSignature());
+        sendPurchaseResult(mPurchaseContext, sku, purchase.getOriginalJson(),
+                purchase.getPurchaseToken(), devPayload, purchase.getSignature());
     }
 
     @Override
@@ -157,30 +175,44 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
 
         mPurchaseContext = context;
 
-        List<String> skuList = new ArrayList<>();
-        skuList.add(sku);
-        SkuDetailsParams.Builder params = SkuDetailsParams.newBuilder();
-        params.setSkusList(skuList).setType(BillingClient.SkuType.INAPP);
+        List<QueryProductDetailsParams.Product> productList = new ArrayList<>();
+        productList.add(QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(sku)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build());
 
-        mBillingClient.querySkuDetailsAsync(params.build(),
-                (billingResult, skuDetailsList) -> {
+        QueryProductDetailsParams queryParams = QueryProductDetailsParams.newBuilder()
+                .setProductList(productList)
+                .build();
+
+        mBillingClient.queryProductDetailsAsync(queryParams,
+                (billingResult, productDetailsList) -> {
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                        _error("Failed to query SKU details: " + billingResult.getResponseCode());
+                        _error("Failed to query product details: " + billingResult.getResponseCode());
                         sendPurchaseFailure(mPurchaseContext, "failed to create Android buy Intent");
+                        mPurchaseContext = 0;
                         return;
                     }
 
-                    if (skuDetailsList == null || skuDetailsList.isEmpty()) {
-                        _error("No SKU details found for " + sku);
+                    if (productDetailsList == null || productDetailsList.isEmpty()) {
+                        _error("No product details found for " + sku);
                         sendPurchaseFailure(mPurchaseContext, "failed to create Android buy Intent");
+                        mPurchaseContext = 0;
                         return;
                     }
 
-                    SkuDetails skuDetails = skuDetailsList.get(0);
-                    BillingFlowParams flowParams = BillingFlowParams.newBuilder()
-                            .setSkuDetails(skuDetails)
-                            .setObfuscatedAccountId(devPayload)
-                            .build();
+                    ProductDetails productDetails = productDetailsList.get(0);
+                    BillingFlowParams.ProductDetailsParams detailsParams =
+                            BillingFlowParams.ProductDetailsParams.newBuilder()
+                                    .setProductDetails(productDetails)
+                                    .build();
+
+                    BillingFlowParams.Builder flowParamsBuilder = BillingFlowParams.newBuilder()
+                            .setProductDetailsParamsList(java.util.Collections.singletonList(detailsParams));
+                    if (!TextUtils.isEmpty(devPayload)) {
+                        flowParamsBuilder.setObfuscatedAccountId(devPayload);
+                    }
+                    BillingFlowParams flowParams = flowParamsBuilder.build();
                     BillingResult result = mBillingClient.launchBillingFlow(mActivity, flowParams);
                     if (result.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         _error("Failed to launch billing flow: " + result.getResponseCode());
@@ -205,7 +237,11 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
         }
 
         _log("doQueryPurchases: ");
-        mBillingClient.queryPurchasesAsync(BillingClient.SkuType.INAPP,
+        QueryPurchasesParams queryParams = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+
+        mBillingClient.queryPurchasesAsync(queryParams,
                 (billingResult, purchases) -> {
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         _error("doQueryPurchases: error retrieving purchased SKUs");
@@ -214,21 +250,19 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                     }
 
                     for (Purchase purchase : purchases) {
-                        try {
-                            JSONObject o = new JSONObject(purchase.getOriginalJson());
-                            String googleToken = o.optString("token", o.optString("purchaseToken"));
-                            String devPayload = o.optString("developerPayload");
-
-                            _print(" - " + purchase.getSkus().get(0));
-                            _log("   - (data:" + purchase.getOriginalJson() + ", sig: " + purchase.getSignature() + ")");
-
-                            sendPurchaseInfo(context, purchase.getSkus().get(0), purchase.getOriginalJson(), googleToken,
-                                    devPayload, purchase.getSignature());
-                        } catch (JSONException e) {
-                            _error("threadQueryPurchases: bad JSON: " + purchase.getOriginalJson());
+                        String sku = getFirstProductId(purchase);
+                        if (TextUtils.isEmpty(sku)) {
+                            _error("doQueryPurchases: empty product list");
                             sendPurchaseInfoError(context, "error in purchase data");
                             return;
                         }
+
+                        String devPayload = getObfuscatedAccountId(purchase);
+                        _print(" - " + sku);
+                        _log("   - (data:" + purchase.getOriginalJson() + ", sig: " + purchase.getSignature() + ")");
+
+                        sendPurchaseInfo(context, sku, purchase.getOriginalJson(), purchase.getPurchaseToken(),
+                                devPayload, purchase.getSignature());
                     }
                     sendPurchaseInfoTerminator(context);
                 });
@@ -245,27 +279,40 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
 
         _log("doQueryProduct: " + sku);
 
-        List<String> skuList = new ArrayList<>();
-        skuList.add(sku);
-        SkuDetailsParams.Builder params = SkuDetailsParams.newBuilder();
-        params.setSkusList(skuList).setType(BillingClient.SkuType.INAPP);
+        List<QueryProductDetailsParams.Product> productList = new ArrayList<>();
+        productList.add(QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(sku)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build());
 
-        mBillingClient.querySkuDetailsAsync(params.build(),
-                (billingResult, skuDetailsList) -> {
+        QueryProductDetailsParams queryParams = QueryProductDetailsParams.newBuilder()
+                .setProductList(productList)
+                .build();
+
+        mBillingClient.queryProductDetailsAsync(queryParams,
+                (billingResult, productDetailsList) -> {
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
-                        _log("threadQueryProduct: bad response from getSkuDetails: " + billingResult.getResponseCode());
+                        _log("threadQueryProduct: bad response from getProductDetails: " + billingResult.getResponseCode());
                         sendProductInfoError(context, sku);
                         return;
                     }
 
-                    if (skuDetailsList == null || skuDetailsList.isEmpty()) {
+                    if (productDetailsList == null || productDetailsList.isEmpty()) {
                         _log("threadQueryProduct: bundle doesn't contain list");
                         sendProductInfoError(context, sku);
                         return;
                     }
 
-                    SkuDetails skuDetails = skuDetailsList.get(0);
-                    sendProductInfo(context, sku, skuDetails.getTitle(), skuDetails.getDescription(), skuDetails.getPrice());
+                    ProductDetails productDetails = productDetailsList.get(0);
+                    ProductDetails.OneTimePurchaseOfferDetails offerDetails =
+                            productDetails.getOneTimePurchaseOfferDetails();
+                    if (offerDetails == null) {
+                        _log("threadQueryProduct: missing one-time purchase offer details");
+                        sendProductInfoError(context, sku);
+                        return;
+                    }
+                    sendProductInfo(context, sku, productDetails.getTitle(),
+                            productDetails.getDescription(), offerDetails.getFormattedPrice());
                 });
         return true;
     }
