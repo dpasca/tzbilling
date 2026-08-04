@@ -103,6 +103,13 @@ public class payment
         {
         }
 
+        public void onResume()
+        {
+            if (mIsReady) {
+                reportReady(true);
+            }
+        }
+
         // ------------------------------------------------------------
         // Internal methods
         // ------------------------------------------------------------
@@ -163,13 +170,8 @@ public class payment
                 @Override public void run() {
                     _log("sendPurchaseResult (runnable): context: " + ctx);
 
-                    _log("sendPurchaseResult (h): " +
-                         "sku: " + ((null == sku)?("null"):(sku)) +
-                         ", data: " + ((null == data)?("null"):(data)) +
-                         ", token: " + ((null == token)?("null"):(token)) +
-                         ", devPayload: " + ((null == devPayload)?("null"):
-                                             (devPayload)) +
-                         ", sig: " + ((null == signature)?("null"):(signature)));
+                    _log("sendPurchaseResult (h): sku: " +
+                         ((null == sku)?("null"):(sku)));
 
                     nativeOnPurchaseComplete(ctx, sku, data, token,
                                              devPayload, signature);
@@ -304,6 +306,19 @@ public class payment
     }
 
     // ------------------------------------------------------------------
+    // onResume
+    // ------------------------------------------------------------------
+
+    public static void onResume()
+    {
+        if (null != sBillingAgent) {
+            sBillingAgent.onResume();
+        } else {
+            _error("onResume: !! no billing agent");
+        }
+    }
+
+    // ------------------------------------------------------------------
     // handleActivityResult
     // ------------------------------------------------------------------
 
@@ -427,7 +442,7 @@ public class payment
     // Consume a sku
     public static boolean doConsume(final String token)
     {
-        _log("doConsume: token: " + token);
+        _log("doConsume");
 
         if (null != sBillingAgent) {
             final boolean result = sBillingAgent.doConsume(token);

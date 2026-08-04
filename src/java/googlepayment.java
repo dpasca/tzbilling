@@ -33,6 +33,7 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
     private int mPurchaseRequestCode;
     private long mPurchaseContext = 0;
     private boolean mPendingConsumableFlag;
+    private boolean mConnectionInProgress;
 
     private static String getFirstProductId(Purchase purchase)
     {
@@ -53,15 +54,32 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                 .enablePendingPurchases()
                 .build();
 
+        startConnection();
+    }
+
+    private void startConnection()
+    {
+        if (mBillingClient == null || mConnectionInProgress) {
+            return;
+        }
+
+        if (mBillingClient.isReady()) {
+            reportReady(true);
+            return;
+        }
+
         _log("connecting to billing service...");
+        mConnectionInProgress = true;
         mBillingClient.startConnection(new BillingClientStateListener() {
             @Override
             public void onBillingSetupFinished(BillingResult billingResult) {
+                mConnectionInProgress = false;
                 if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                     _log("Billing service connected");
                     mIsReady = true;
                     reportReady(true);
                 } else {
+                    mIsReady = false;
                     _log("Billing service setup failed with response code: " + billingResult.getResponseCode());
                     reportReady(false);
                 }
@@ -70,10 +88,17 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
             @Override
             public void onBillingServiceDisconnected() {
                 _log("Billing service disconnected");
+                mConnectionInProgress = false;
                 mIsReady = false;
                 reportReady(false);
             }
         });
+    }
+
+    @Override
+    public void onResume()
+    {
+        startConnection();
     }
 
     @Override
@@ -96,49 +121,75 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
             }
         } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
             _log("User canceled the purchase");
-            sendPurchaseFailure(mPurchaseContext, null);
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, null);
+            }
         } else {
             _error("Purchase failed with response code: " + billingResult.getResponseCode());
-            sendPurchaseFailure(mPurchaseContext, "Purchase did not complete");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "Purchase did not complete");
+            }
         }
         mPurchaseContext = 0;
     }
 
     private void handlePurchase(Purchase purchase) {
-        _log("handlePurchase: " + purchase.getPurchaseToken());
+        _log("handlePurchase");
         if (!verifyPurchase(purchase.getOriginalJson(), purchase.getSignature())) {
             _log("Invalid signature");
-            sendPurchaseFailure(mPurchaseContext, "invalid signature");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "invalid signature");
+            }
             return;
         }
 
-        if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
-            if (mPendingConsumableFlag) {
-                // For consumable items, consume immediately
-                doConsume(purchase.getPurchaseToken());
-            } else {
-                // Acknowledge the purchase if it hasn't been acknowledged yet.
-                if (!purchase.isAcknowledged()) {
-                    AcknowledgePurchaseParams acknowledgePurchaseParams =
-                            AcknowledgePurchaseParams.newBuilder()
-                                    .setPurchaseToken(purchase.getPurchaseToken())
-                                    .build();
-                    mBillingClient.acknowledgePurchase(acknowledgePurchaseParams, billingResult -> {
-                        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                            _log("Purchase acknowledged");
-                        } else {
-                            _error("Failed to acknowledge purchase: " + billingResult.getResponseCode());
-                        }
-                    });
-                }
+        if (purchase.getPurchaseState() == Purchase.PurchaseState.PENDING) {
+            _log("Purchase is pending");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "Purchase is pending");
             }
+            return;
+        }
+
+        if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
+            _error("Purchase is not in the purchased state");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "Purchase did not complete");
+            }
+            return;
+        }
+
+        if (!mPendingConsumableFlag && !purchase.isAcknowledged()) {
+            AcknowledgePurchaseParams acknowledgePurchaseParams =
+                    AcknowledgePurchaseParams.newBuilder()
+                            .setPurchaseToken(purchase.getPurchaseToken())
+                            .build();
+            mBillingClient.acknowledgePurchase(acknowledgePurchaseParams, billingResult -> {
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    _log("Purchase acknowledged");
+                } else {
+                    _error("Failed to acknowledge purchase: " + billingResult.getResponseCode());
+                }
+            });
         }
 
         String sku = getFirstProductId(purchase);
+        if (TextUtils.isEmpty(sku)) {
+            _error("Purchase has no product ID");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "Purchase data is incomplete");
+            }
+            return;
+        }
 
-        _log("Purchase succeeded");
-        sendPurchaseResult(mPurchaseContext, sku, purchase.getOriginalJson(),
-                purchase.getPurchaseToken(), null, purchase.getSignature());
+        if (mPurchaseContext != 0) {
+            _log("Purchase succeeded; handing it to the game before consumption");
+            sendPurchaseResult(mPurchaseContext, sku, purchase.getOriginalJson(),
+                    purchase.getPurchaseToken(), null, purchase.getSignature());
+        } else {
+            _log("Purchase completed without an active flow; requesting reconciliation");
+            reportReady(true);
+        }
     }
 
     @Override
@@ -240,6 +291,17 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                     }
 
                     for (Purchase purchase : purchases) {
+                        if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
+                            _log("doQueryPurchases: ignoring a purchase that is not complete");
+                            continue;
+                        }
+
+                        if (!verifyPurchase(purchase.getOriginalJson(), purchase.getSignature())) {
+                            _error("doQueryPurchases: invalid purchase signature");
+                            sendPurchaseInfoError(context, "invalid purchase signature");
+                            return;
+                        }
+
                         String sku = getFirstProductId(purchase);
                         if (TextUtils.isEmpty(sku)) {
                             _error("doQueryPurchases: empty product list");
@@ -248,7 +310,6 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                         }
 
                         _print(" - " + sku);
-                        _log("   - (data:" + purchase.getOriginalJson() + ", sig: " + purchase.getSignature() + ")");
 
                         sendPurchaseInfo(context, sku, purchase.getOriginalJson(), purchase.getPurchaseToken(),
                                 null, purchase.getSignature());
@@ -319,7 +380,7 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
             return false;
         }
 
-        _print("doConsume: token: " + token);
+        _print("doConsume");
         ConsumeParams consumeParams = ConsumeParams.newBuilder()
                 .setPurchaseToken(token)
                 .build();
