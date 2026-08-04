@@ -19,7 +19,19 @@ using namespace turbulenz;
 static void
 InitStringFromJString(std::string &out_string, JNIEnv *env, jstring jstr)
 {
+    if (0 == jstr)
+    {
+        out_string.clear();
+        return;
+    }
+
     const char *jstrChars = env->GetStringUTFChars(jstr, 0);
+    if (0 == jstrChars)
+    {
+        out_string.clear();
+        return;
+    }
+
     out_string = jstrChars;
     env->ReleaseStringUTFChars(jstr, jstrChars);
 }
