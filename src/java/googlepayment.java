@@ -115,9 +115,18 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
 
     @Override
     public void onPurchasesUpdated(BillingResult billingResult, List<Purchase> purchases) {
-        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK &&
+                purchases != null && !purchases.isEmpty()) {
             for (Purchase purchase : purchases) {
                 handlePurchase(purchase);
+                // A purchase context owns one native callback. Any additional
+                // completed items are picked up by reconciliation.
+                mPurchaseContext = 0;
+            }
+        } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+            _error("Purchase completed without purchase data");
+            if (mPurchaseContext != 0) {
+                sendPurchaseFailure(mPurchaseContext, "Purchase data is incomplete");
             }
         } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
             _log("User canceled the purchase");
