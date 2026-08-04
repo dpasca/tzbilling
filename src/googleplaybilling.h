@@ -74,9 +74,11 @@ public:
 
 protected:
 
+    JNIEnv *GetJNIEnv() const;
+
     bool CallJavaMethod(jmethodID method, ...);
 
-    JNIEnv        *mJNIEnv;
+    JavaVM        *mJavaVM;
     jclass         mPaymentClass;
     jmethodID      mDoCheckReadyMethod;
     jmethodID      mDoPurchaseMethod;

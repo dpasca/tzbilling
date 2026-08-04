@@ -237,7 +237,7 @@ namespace turbulenz
 {
 
 GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass)
-    : mJNIEnv(jniEnv)
+    : mJavaVM(0)
     , mPaymentClass(paymentClass)
 {
     LOGI("initializing");
@@ -248,13 +248,19 @@ GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass)
         return;
     }
 
+    if (JNI_OK != jniEnv->GetJavaVM(&mJavaVM))
+    {
+        LOGE("cannot get Java VM");
+        return;
+    }
+
     if (0 == mPaymentClass)
     {
         static const char *paymentClassName = "com/turbulenz/turbulenz/payment";
         jclass paymentLocal = jniEnv->FindClass(paymentClassName);
         if (0 == paymentLocal)
         {
-            mJNIEnv = 0;
+            mJavaVM = 0;
             LOGE("cannot find Java class");
             return;
         }
@@ -306,13 +312,14 @@ GooglePlayBilling::GooglePlayBilling(JNIEnv *jniEnv, jclass paymentClass)
 
     jniEnv->DeleteGlobalRef(mPaymentClass);
     mPaymentClass = 0;
-    mJNIEnv = 0;
+    mJavaVM = 0;
 }
 
 GooglePlayBilling::~GooglePlayBilling()
 {
     LOGI("shutting down");
-    if (0 != mJNIEnv)
+    JNIEnv *env = GetJNIEnv();
+    if (0 != env)
     {
         if (0 != mPaymentClass)
         {
@@ -320,16 +327,39 @@ GooglePlayBilling::~GooglePlayBilling()
 
             CallJavaMethod(mDoCheckReadyMethod, (jlong )0);
 
-            mJNIEnv->DeleteGlobalRef(mPaymentClass);
+            env->DeleteGlobalRef(mPaymentClass);
             mPaymentClass = 0;
         }
     }
+    mJavaVM = 0;
+}
+
+JNIEnv *
+GooglePlayBilling::GetJNIEnv() const
+{
+    if (0 == mJavaVM)
+    {
+        LOGE("attempt to get JNI env with no Java VM set");
+        return 0;
+    }
+
+    JNIEnv *env = 0;
+    const jint result = mJavaVM->GetEnv(
+        reinterpret_cast<void **>(&env), JNI_VERSION_1_2);
+    if (JNI_OK != result)
+    {
+        LOGE("current thread is not attached to the Java VM");
+        return 0;
+    }
+
+    return env;
 }
 
 bool
 GooglePlayBilling::CallJavaMethod(jmethodID method, ...)
 {
-    if (0 == mJNIEnv)
+    JNIEnv *env = GetJNIEnv();
+    if (0 == env)
     {
         LOGE("attempt to call Java with no JNI env set");
         return false;
@@ -350,13 +380,13 @@ GooglePlayBilling::CallJavaMethod(jmethodID method, ...)
 
     LOGI("making call to Java ...");
     jboolean ret =
-        mJNIEnv->CallStaticBooleanMethodV(mPaymentClass, method, args);
-    jthrowable exc = mJNIEnv->ExceptionOccurred();
+        env->CallStaticBooleanMethodV(mPaymentClass, method, args);
+    jthrowable exc = env->ExceptionOccurred();
     if (exc)
     {
         LOGE("!! exception in Java call:");
-        mJNIEnv->ExceptionDescribe();
-        mJNIEnv->ExceptionClear();
+        env->ExceptionDescribe();
+        env->ExceptionClear();
     }
     LOGI("done");
 
@@ -386,7 +416,8 @@ bool
 GooglePlayBilling::QueryProduct(void *ctx, const char *sku,
                                 GooglePlayBilling::ProductQueryCB callback)
 {
-    if (0 == mJNIEnv)
+    JNIEnv *env = GetJNIEnv();
+    if (0 == env)
     {
         LOGE("call to QueryProduct before initialization");
         return false;
@@ -396,9 +427,11 @@ GooglePlayBilling::QueryProduct(void *ctx, const char *sku,
     productQueryCtx->callerContext = ctx;
     productQueryCtx->callback = callback;
 
-    jstring jSKU = mJNIEnv->NewStringUTF(sku);
+    jstring jSKU = env->NewStringUTF(sku);
     const jlong jCtx = (jlong )productQueryCtx;
-    if (!CallJavaMethod(mDoQueryProductMethod, jSKU, jCtx))
+    const bool result = CallJavaMethod(mDoQueryProductMethod, jSKU, jCtx);
+    env->DeleteLocalRef(jSKU);
+    if (!result)
     {
         delete productQueryCtx;
         return false;
@@ -414,7 +447,8 @@ GooglePlayBilling::ConfirmPurchase(void *ctx, const char *sku,
                                    GooglePlayBilling::PurchaseSuccessCB success,
                                    GooglePlayBilling::PurchaseFailureCB failure)
 {
-    if (0 == mJNIEnv)
+    JNIEnv *env = GetJNIEnv();
+    if (0 == env)
     {
         LOGE("call to ConfirmPurchase before initialization");
         return false;
@@ -425,13 +459,17 @@ GooglePlayBilling::ConfirmPurchase(void *ctx, const char *sku,
     purchaseCtx->successCallback = success;
     purchaseCtx->failureCallback = failure;
 
-    jstring jSKU = mJNIEnv->NewStringUTF(sku);
-    jstring jClientToken = mJNIEnv->NewStringUTF(clientToken);
+    jstring jSKU = env->NewStringUTF(sku);
+    jstring jClientToken = env->NewStringUTF(clientToken);
     jboolean jIsConsumable = isConsumable;
     jlong jCtx = (jlong )(size_t )purchaseCtx;
 
     LOGI("Calling Java DoPurchase method ...");
-    if (!CallJavaMethod(mDoPurchaseMethod, jSKU, jClientToken, jIsConsumable, jCtx))
+    const bool result = CallJavaMethod(
+        mDoPurchaseMethod, jSKU, jClientToken, jIsConsumable, jCtx);
+    env->DeleteLocalRef(jClientToken);
+    env->DeleteLocalRef(jSKU);
+    if (!result)
     {
         LOGI("DoPurchase method returned FALSE");
         delete purchaseCtx;
@@ -447,14 +485,17 @@ GooglePlayBilling::ConsumePurchase(const char *googleToken)
 {
     // TODO: async?
 
-    if (0 == mJNIEnv)
+    JNIEnv *env = GetJNIEnv();
+    if (0 == env)
     {
         LOGE("call to ConsumePurchase before initialization");
         return false;
     }
 
-    jstring jGoogleToken = mJNIEnv->NewStringUTF(googleToken);
-    return CallJavaMethod(mDoConsumeMethod, jGoogleToken);
+    jstring jGoogleToken = env->NewStringUTF(googleToken);
+    const bool result = CallJavaMethod(mDoConsumeMethod, jGoogleToken);
+    env->DeleteLocalRef(jGoogleToken);
+    return result;
 }
 
 bool
