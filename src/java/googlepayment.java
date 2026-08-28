@@ -49,9 +49,13 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
         mActivity = activity;
         mPurchaseRequestCode = purchaseRequestCode;
 
+        PendingPurchasesParams pendingPurchasesParams = PendingPurchasesParams.newBuilder()
+                .enableOneTimeProducts()
+                .build();
         mBillingClient = BillingClient.newBuilder(mActivity)
                 .setListener(this)
-                .enablePendingPurchases()
+                .enablePendingPurchases(pendingPurchasesParams)
+                .enableAutoServiceReconnection()
                 .build();
 
         startConnection();
@@ -236,7 +240,7 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                 .build();
 
         mBillingClient.queryProductDetailsAsync(queryParams,
-                (billingResult, productDetailsList) -> {
+                (billingResult, queryProductDetailsResult) -> {
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         _error("Failed to query product details: " + billingResult.getResponseCode());
                         sendPurchaseFailure(mPurchaseContext, "failed to create Android buy Intent");
@@ -244,6 +248,8 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                         return;
                     }
 
+                    List<ProductDetails> productDetailsList =
+                            queryProductDetailsResult.getProductDetailsList();
                     if (productDetailsList == null || productDetailsList.isEmpty()) {
                         _error("No product details found for " + sku);
                         sendPurchaseFailure(mPurchaseContext, "failed to create Android buy Intent");
@@ -349,13 +355,15 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
                 .build();
 
         mBillingClient.queryProductDetailsAsync(queryParams,
-                (billingResult, productDetailsList) -> {
+                (billingResult, queryProductDetailsResult) -> {
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         _log("threadQueryProduct: bad response from getProductDetails: " + billingResult.getResponseCode());
                         sendProductInfoError(context, sku);
                         return;
                     }
 
+                    List<ProductDetails> productDetailsList =
+                            queryProductDetailsResult.getProductDetailsList();
                     if (productDetailsList == null || productDetailsList.isEmpty()) {
                         _log("threadQueryProduct: bundle doesn't contain list");
                         sendProductInfoError(context, sku);
