@@ -60,7 +60,7 @@ public class payment
         abstract public boolean doQueryPurchases(final long context);
 
         /// If this returns true, it must call either
-        /// sendProductInfoError() or sendProductInfo().
+        /// sendProductInfoError() or sendProductInfo() exactly once.
         abstract public boolean doQueryProduct(final String sku,
                                                final long context);
 

@@ -11,6 +11,7 @@ import com.android.billingclient.api.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class googlepayment extends payment.BillingAgent implements PurchasesUpdatedListener
 {
@@ -344,6 +345,10 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
 
         _log("doQueryProduct: " + sku);
 
+        // The first native response frees context. Never forward a second
+        // response for this request, even if callbacks arrive concurrently.
+        final AtomicBoolean responseSent = new AtomicBoolean();
+
         List<QueryProductDetailsParams.Product> productList = new ArrayList<>();
         productList.add(QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(sku)
@@ -356,6 +361,10 @@ public class googlepayment extends payment.BillingAgent implements PurchasesUpda
 
         mBillingClient.queryProductDetailsAsync(queryParams,
                 (billingResult, queryProductDetailsResult) -> {
+                    if (!responseSent.compareAndSet(false, true)) {
+                        _log("Ignoring duplicate product details response for " + sku);
+                        return;
+                    }
                     if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         _log("threadQueryProduct: bad response from getProductDetails: " + billingResult.getResponseCode());
                         sendProductInfoError(context, sku);
